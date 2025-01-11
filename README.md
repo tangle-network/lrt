@@ -42,6 +42,7 @@ graph TD
 A[Deposit ETH] --> B[Receive Shares]
 B --> C[ERC20 Delegated to Operator]
 C --> D[Schedule Unstake]
-D --> E[Schedule Withdraw]
-E --> F[Execute Withdraw]
+D --> E[Execute Unstake]
+E --> F[Schedule Withdraw]
+F --> G[Execute Withdraw]
 ```
