@@ -41,16 +41,16 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     uint256 private constant REWARD_FACTOR = 1e18;
 
     /* ============ Events ============ */
-    
+
     /// @notice Emitted when a new reward token is added
     event RewardTokenAdded(address indexed token);
-    
+
     /// @notice Emitted when rewards are claimed by a user
     /// @param user The user claiming rewards
     /// @param token The reward token being claimed
     /// @param amount The amount of rewards claimed
     event RewardsClaimed(address indexed user, address indexed token, uint256 amount);
-    
+
     /// @notice Emitted when a new checkpoint is created for a user
     /// @param user The user the checkpoint is for
     /// @param token The reward token the checkpoint is for
@@ -58,13 +58,9 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param timestamp When the checkpoint was created
     /// @param rewardIndex The index in the rewardTimestamps array
     event CheckpointCreated(
-        address indexed user,
-        address indexed token,
-        uint256 index,
-        uint256 timestamp,
-        uint256 rewardIndex
+        address indexed user, address indexed token, uint256 index, uint256 timestamp, uint256 rewardIndex
     );
-    
+
     /// @notice Emitted when the global reward index is updated
     /// @param token The reward token whose index was updated
     /// @param index The new global index value
@@ -78,7 +74,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     event WithdrawalCancelled(address indexed user, uint256 amount);
 
     /* ============ Errors ============ */
-    
+
     /// @notice Attempted to add an invalid reward token (zero address or base asset)
     error InvalidRewardToken();
     /// @notice Attempted to add a reward token that was already added
@@ -102,22 +98,22 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @dev Used to calculate rewards between checkpoint creation and current time
     /// Historical rewards are stored in pendingRewards to maintain claim integrity
     struct Checkpoint {
-        uint256 rewardIndex;     // Global index at checkpoint creation
-        uint256 timestamp;       // When checkpoint was created
-        uint256 shareBalance;    // User's share balance at checkpoint
+        uint256 rewardIndex; // Global index at checkpoint creation
+        uint256 timestamp; // When checkpoint was created
+        uint256 shareBalance; // User's share balance at checkpoint
         uint256 lastRewardIndex; // Index in rewardTimestamps array
-        uint256 pendingRewards;  // Unclaimed rewards at checkpoint
+        uint256 pendingRewards; // Unclaimed rewards at checkpoint
     }
 
     /// @notice Tracks global reward state for a token
     /// @dev Maintains reward distribution history and current index
     /// Index increases with each reward based on: newRewards * REWARD_FACTOR / totalSupply
     struct RewardData {
-        uint256 index;           // Current global reward index
-        uint256 lastUpdateTime;  // Last index update timestamp
-        bool isValid;           // Whether token is registered
+        uint256 index; // Current global reward index
+        uint256 lastUpdateTime; // Last index update timestamp
+        bool isValid; // Whether token is registered
         uint256[] rewardTimestamps; // When rewards were received
-        uint256[] rewardAmounts;    // Amount of each reward
+        uint256[] rewardAmounts; // Amount of each reward
     }
 
     /* ============ State Variables ============ */
@@ -160,7 +156,11 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         address _mads,
         string memory _name,
         string memory _symbol
-    ) ERC4626(ERC20(_baseToken), _name, _symbol) TangleMultiAssetDelegationWrapper(_baseToken, _mads) Owned(msg.sender) {
+    )
+        ERC4626(ERC20(_baseToken), _name, _symbol)
+        TangleMultiAssetDelegationWrapper(_baseToken, _mads)
+        Owned(msg.sender)
+    {
         operator = _operator;
         blueprintSelection = _blueprintSelection;
     }
@@ -185,7 +185,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
             rewardAmounts: new uint256[](0)
         });
         rewardTokens.push(token);
-        
+
         emit RewardTokenAdded(token);
     }
 
@@ -201,17 +201,14 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param user Address to claim rewards for
     /// @param tokens Array of reward token addresses to claim
     /// @return rewards Array of claimed amounts per token
-    function claimRewards(
-        address user,
-        address[] calldata tokens
-    ) external returns (uint256[] memory rewards) {
+    function claimRewards(address user, address[] calldata tokens) external returns (uint256[] memory rewards) {
         if (msg.sender != user) revert Unauthorized();
 
         rewards = new uint256[](tokens.length);
-        
+
         // Update all indices once at start
         _updateAllRewardIndices();
-        
+
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             if (!rewardData[token].isValid) revert InvalidRewardToken();
@@ -248,33 +245,25 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param assets Amount of assets to deposit
     /// @param receiver Recipient of the shares
     /// @return shares Amount of shares minted
-    function deposit(
-        uint256 assets,
-        address receiver
-    ) public override returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
         // Calculate shares before minting
         shares = previewDeposit(assets);
-        
+
         // Process checkpoints for new shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();
             for (uint256 i = 0; i < rewardTokens.length; i++) {
                 address token = rewardTokens[i];
-                
+
                 // Calculate rewards earned by existing shares
                 uint256 existingRewards = _calculatePendingRewards(receiver, token);
-                
+
                 // Create new checkpoint with existing rewards
                 // New shares will start earning from current index
-                _createCheckpoint(
-                    receiver,
-                    token,
-                    balanceOf[receiver] + shares,
-                    existingRewards
-                );
+                _createCheckpoint(receiver, token, balanceOf[receiver] + shares, existingRewards);
             }
         }
-        
+
         // Complete deposit
         super.deposit(assets, receiver);
 
@@ -288,11 +277,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param receiver Recipient of the assets
     /// @param owner Owner of the shares
     /// @return shares Amount of shares burned
-    function withdraw(
-        uint256 assets,
-        address receiver,
-        address owner
-    ) public override returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256 shares) {
         // Check that withdrawal has been scheduled
         if (scheduledWithdrawAmount[owner] < assets) revert NoScheduledAmount();
 
@@ -301,10 +286,10 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
 
         // Update tracking
         scheduledWithdrawAmount[owner] = scheduledWithdrawAmount[owner] - assets;
-        
+
         // Calculate shares before burning
         shares = previewWithdraw(assets);
-        
+
         // Process checkpoints before burning shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();
@@ -312,17 +297,12 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
                 address token = rewardTokens[i];
                 // Calculate pending rewards before withdrawal
                 uint256 pendingRewards = _calculatePendingRewards(owner, token);
-                
+
                 // Create checkpoint with remaining shares and all pending rewards
-                _createCheckpoint(
-                    owner,
-                    token,
-                    balanceOf[owner] - shares,
-                    pendingRewards
-                );
+                _createCheckpoint(owner, token, balanceOf[owner] - shares, pendingRewards);
             }
         }
-        
+
         // Complete withdrawal
         return super.withdraw(assets, receiver, owner);
     }
@@ -333,11 +313,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param receiver Recipient of the assets
     /// @param owner Owner of the shares
     /// @return assets Amount of assets redeemed
-    function redeem(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) public override returns (uint256 assets) {
+    function redeem(uint256 shares, address receiver, address owner) public override returns (uint256 assets) {
         // Calculate assets being redeemed
         assets = previewRedeem(shares);
 
@@ -357,17 +333,12 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
                 address token = rewardTokens[i];
                 // Calculate pending rewards before redemption
                 uint256 pendingRewards = _calculatePendingRewards(owner, token);
-                
+
                 // Create checkpoint with remaining shares and all pending rewards
-                _createCheckpoint(
-                    owner,
-                    token,
-                    balanceOf[owner] - shares,
-                    pendingRewards
-                );
+                _createCheckpoint(owner, token, balanceOf[owner] - shares, pendingRewards);
             }
         }
-        
+
         // Complete redemption
         return super.redeem(shares, receiver, owner);
     }
@@ -378,16 +349,16 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function scheduleUnstake(uint256 assets) external {
         uint256 shares = previewWithdraw(assets);
         require(balanceOf[msg.sender] >= shares, "Insufficient shares");
-        
+
         // Track scheduled unstake
         scheduledUnstakeAmount[msg.sender] += assets;
-        
+
         // Process checkpoints to stop reward accrual for these shares
         _processRewardCheckpoints(msg.sender, address(0), shares);
-        
+
         // Schedule unstake through wrapper
         _scheduleUnstake(operator, assets);
-        
+
         emit UnstakeScheduled(operator, assets);
     }
 
@@ -396,10 +367,10 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function executeUnstake() external {
         uint256 scheduled = scheduledUnstakeAmount[msg.sender];
         if (scheduled == 0) revert NoScheduledAmount();
-        
+
         // Execute unstake through wrapper
         _executeUnstake();
-        
+
         // Update state tracking - move from scheduled to unstaked
         unstakeAmount[msg.sender] += scheduled;
         scheduledUnstakeAmount[msg.sender] = 0;
@@ -411,14 +382,14 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function scheduleWithdraw(uint256 assets) external {
         // Verify caller has enough unstaked assets
         if (unstakeAmount[msg.sender] < assets) revert WithdrawalNotUnstaked();
-        
+
         // Track scheduled withdrawal
         scheduledWithdrawAmount[msg.sender] += assets;
         unstakeAmount[msg.sender] -= assets;
-        
+
         // Schedule withdraw through wrapper
         _scheduleWithdraw(assets);
-        
+
         emit WithdrawalScheduled(assets);
     }
 
@@ -427,17 +398,17 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function cancelWithdraw(uint256 assets) external {
         uint256 scheduled = scheduledWithdrawAmount[msg.sender];
         if (assets > scheduled) revert InsufficientScheduledAmount();
-        
+
         // Update tracking - return to unstaked state
         scheduledWithdrawAmount[msg.sender] = scheduled - assets;
         unstakeAmount[msg.sender] += assets;
-        
+
         // Cancel withdraw through wrapper
         _cancelWithdraw(assets);
-        
+
         // Re-delegate the assets since they're back in the pool
         _delegate(operator, assets, blueprintSelection);
-        
+
         emit WithdrawalCancelled(msg.sender, assets);
     }
 
@@ -446,17 +417,17 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function cancelUnstake(uint256 assets) external {
         uint256 scheduled = scheduledUnstakeAmount[msg.sender];
         if (assets > scheduled) revert InsufficientScheduledAmount();
-        
+
         // Update tracking
         scheduledUnstakeAmount[msg.sender] = scheduled - assets;
-        
+
         // Cancel unstake through wrapper
         _cancelUnstake(operator, assets);
-        
+
         // Process checkpoints to resume reward accrual
         uint256 shares = previewWithdraw(assets);
         _processRewardCheckpoints(msg.sender, msg.sender, shares);
-        
+
         emit UnstakeCancelled(msg.sender, assets);
     }
 
@@ -471,33 +442,28 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param from Sender address
     /// @param to Recipient address (or 0 for burns)
     /// @param amount Number of shares being transferred
-    function _processRewardCheckpoints(
-        address from,
-        address to,
-        uint256 amount
-    ) internal {
+    function _processRewardCheckpoints(address from, address to, uint256 amount) internal {
         if (rewardTokens.length == 0) return;
 
         uint256 fromBalance = balanceOf[from];
         uint256 toBalance = balanceOf[to];
-        
 
         // Update all indices first to capture any new rewards
         _updateAllRewardIndices();
 
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
-            
+
             // Calculate total pending rewards for sender
             uint256 pendingRewards = _calculatePendingRewards(from, token);
-            
+
             // Original holder keeps all historical rewards
             _createCheckpoint(from, token, fromBalance - amount, pendingRewards);
-            
+
             if (to != address(0)) {
                 // Calculate recipient's existing rewards
                 uint256 recipientRewards = _calculatePendingRewards(to, token);
-                
+
                 // Recipient keeps their existing rewards and gets new balance
                 _createCheckpoint(to, token, toBalance + amount, recipientRewards);
             }
@@ -511,12 +477,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param token Reward token address
     /// @param newBalance User's new share balance
     /// @param pendingRewards Unclaimed rewards to store
-    function _createCheckpoint(
-        address user,
-        address token,
-        uint256 newBalance,
-        uint256 pendingRewards
-    ) internal {
+    function _createCheckpoint(address user, address token, uint256 newBalance, uint256 pendingRewards) internal {
         RewardData storage rData = rewardData[token];
         userCheckpoints[user][token] = Checkpoint({
             rewardIndex: rData.index,
@@ -526,13 +487,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
             pendingRewards: pendingRewards
         });
 
-        emit CheckpointCreated(
-            user,
-            token,
-            rData.index,
-            block.timestamp,
-            rData.rewardTimestamps.length
-        );
+        emit CheckpointCreated(user, token, rData.index, block.timestamp, rData.rewardTimestamps.length);
     }
 
     /// @notice Calculate pending rewards for a user
@@ -542,10 +497,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param user User address
     /// @param token Reward token address
     /// @return Total pending rewards
-    function _calculatePendingRewards(
-        address user,
-        address token
-    ) internal view returns (uint256) {
+    function _calculatePendingRewards(address user, address token) internal view returns (uint256) {
         Checkpoint memory checkpoint = userCheckpoints[user][token];
         RewardData storage rData = rewardData[token];
 
@@ -554,8 +506,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Use mulDivUp for final reward calculation to ensure no dust is left behind
         uint256 newRewards = checkpoint.shareBalance.mulDivUp(indexDelta, REWARD_FACTOR);
         uint256 totalRewards = newRewards + checkpoint.pendingRewards;
-        
-        
+
         return totalRewards;
     }
 
@@ -568,24 +519,21 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param user User to claim for
     /// @param token Reward token to claim
     /// @return amount Amount of rewards claimed
-    function _claimReward(
-        address user,
-        address token
-    ) internal returns (uint256) {
+    function _claimReward(address user, address token) internal returns (uint256) {
         // Update global reward index first
         _updateRewardIndex(token);
-        
+
         // Calculate total pending rewards
         uint256 pendingRewards = _calculatePendingRewards(user, token);
-        
+
         if (pendingRewards > 0) {
             // Reset checkpoint with current index and zero pending rewards
             _createCheckpoint(user, token, balanceOf[user], 0);
-            
+
             ERC20(token).safeTransfer(user, pendingRewards);
             emit RewardsClaimed(user, token, pendingRewards);
         }
-        
+
         return pendingRewards;
     }
 
@@ -613,24 +561,24 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         RewardData storage rData = rewardData[token];
         uint256 currentBalance = ERC20(token).balanceOf(address(this));
         uint256 lastKnownBalance = _getLastKnownBalance(token);
-        
+
         if (currentBalance > lastKnownBalance) {
             uint256 newRewards = currentBalance - lastKnownBalance;
-            
+
             // Record reward arrival
             rData.rewardTimestamps.push(block.timestamp);
             rData.rewardAmounts.push(newRewards);
-            
+
             uint256 supply = totalSupply;
             if (supply > 0) {
                 // Use mulDivDown for index updates to prevent accumulating errors
-                uint256 rewardPerShare = newRewards.mulDivDown(REWARD_FACTOR, supply);                
+                uint256 rewardPerShare = newRewards.mulDivDown(REWARD_FACTOR, supply);
                 rData.index += rewardPerShare;
-                
+
                 emit RewardIndexUpdated(token, rData.index, block.timestamp);
             }
         }
-        
+
         rData.lastUpdateTime = block.timestamp;
     }
 
@@ -660,10 +608,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param user User address
     /// @param token Reward token address
     /// @return Claimable reward amount
-    function getClaimableRewards(
-        address user,
-        address token
-    ) external view returns (uint256) {
+    function getClaimableRewards(address user, address token) external view returns (uint256) {
         if (balanceOf[user] == 0) return 0;
 
         Checkpoint memory checkpoint = userCheckpoints[user][token];
@@ -693,20 +638,18 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @return isValid Whether token is valid
     /// @return rewardTimestamps Array of reward timestamps
     /// @return rewardAmounts Array of reward amounts
-    function getRewardData(address token) external view returns (
-        uint256 index,
-        uint256 lastUpdateTime,
-        bool isValid,
-        uint256[] memory rewardTimestamps,
-        uint256[] memory rewardAmounts
-    ) {
+    function getRewardData(address token)
+        external
+        view
+        returns (
+            uint256 index,
+            uint256 lastUpdateTime,
+            bool isValid,
+            uint256[] memory rewardTimestamps,
+            uint256[] memory rewardAmounts
+        )
+    {
         RewardData storage data = rewardData[token];
-        return (
-            data.index,
-            data.lastUpdateTime,
-            data.isValid,
-            data.rewardTimestamps,
-            data.rewardAmounts
-        );
+        return (data.index, data.lastUpdateTime, data.isValid, data.rewardTimestamps, data.rewardAmounts);
     }
-} 
+}

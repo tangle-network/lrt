@@ -11,7 +11,7 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     }
 
     // 1 week delay for schedule actions
-    uint256 constant public SCHEDULE_DELAY = 1 weeks;
+    uint256 public constant SCHEDULE_DELAY = 1 weeks;
 
     // Simple mapping of user => scheduled state
     mapping(address => ScheduleState) public scheduledUnstakes;
@@ -19,7 +19,9 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     mapping(address => uint256) public delegatedAmounts;
 
     // Events
-    event Delegated(address indexed token, address indexed user, uint256 amount, bytes32 operator, uint64[] blueprintSelection);
+    event Delegated(
+        address indexed token, address indexed user, uint256 amount, bytes32 operator, uint64[] blueprintSelection
+    );
     event UnstakeScheduled(address indexed token, address indexed user, uint256 amount, uint256 timestamp);
     event WithdrawScheduled(address indexed token, address indexed user, uint256 amount, uint256 timestamp);
     event UnstakeCancelled(address indexed token, address indexed user, uint256 amount);
@@ -45,7 +47,9 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     function goOnline() external {}
 
     // Delegate function - track amount and emit event
-    function delegate(bytes32 operator, uint256, address, uint256 amount, uint64[] memory blueprintSelection) external {
+    function delegate(bytes32 operator, uint256, address, uint256 amount, uint64[] memory blueprintSelection)
+        external
+    {
         delegatedAmounts[msg.sender] += amount;
         emit Delegated(address(0), msg.sender, amount, operator, blueprintSelection);
     }
@@ -69,7 +73,7 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
         ScheduleState storage state = scheduledWithdraws[msg.sender];
         if (state.amount == 0) revert NoScheduledAmount();
         if (block.timestamp < state.timestamp) revert DelayNotElapsed();
-        
+
         uint256 amount = state.amount;
         state.amount = 0;
         state.timestamp = 0;
@@ -87,12 +91,12 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     // Schedule unstake - check delegated balance and track schedule
     function scheduleDelegatorUnstake(bytes32, uint256, address tokenAddress, uint256 amount) external {
         if (delegatedAmounts[msg.sender] < amount) revert InsufficientDelegatedBalance();
-        
+
         ScheduleState storage state = scheduledUnstakes[msg.sender];
         state.amount = state.amount + amount;
         state.timestamp = block.timestamp + SCHEDULE_DELAY;
         delegatedAmounts[msg.sender] = delegatedAmounts[msg.sender] - amount;
-        
+
         emit UnstakeScheduled(tokenAddress, msg.sender, amount, state.timestamp);
     }
 
@@ -101,7 +105,7 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
         ScheduleState storage state = scheduledUnstakes[msg.sender];
         if (state.amount == 0) revert NoScheduledAmount();
         if (block.timestamp < state.timestamp) revert DelayNotElapsed();
-        
+
         uint256 amount = state.amount;
         state.amount = 0;
         state.timestamp = 0;
@@ -112,14 +116,18 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     function cancelDelegatorUnstake(bytes32, uint256, address tokenAddress, uint256 amount) external {
         ScheduleState storage state = scheduledUnstakes[msg.sender];
         if (state.amount < amount) revert InsufficientScheduledAmount();
-        
+
         state.amount = state.amount - amount;
         delegatedAmounts[msg.sender] = delegatedAmounts[msg.sender] + amount;
         emit UnstakeCancelled(tokenAddress, msg.sender, amount);
     }
 
     // View functions
-    function getDelegation(address tokenAddress, address user) external view returns (uint256 amount, bytes32, uint64[] memory) {
+    function getDelegation(address tokenAddress, address user)
+        external
+        view
+        returns (uint256 amount, bytes32, uint64[] memory)
+    {
         return (delegatedAmounts[user], bytes32(0), new uint64[](0));
     }
 
@@ -127,15 +135,23 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
         return delegatedAmounts[user];
     }
 
-    function getScheduledUnstake(address tokenAddress, address user) external view returns (uint256 amount, uint256 timestamp) {
+    function getScheduledUnstake(address tokenAddress, address user)
+        external
+        view
+        returns (uint256 amount, uint256 timestamp)
+    {
         // Return the scheduled amount for the caller (vault), not the end user
         ScheduleState storage state = scheduledUnstakes[tokenAddress];
         return (state.amount, state.timestamp);
     }
 
-    function getScheduledWithdraw(address tokenAddress, address user) external view returns (uint256 amount, uint256 timestamp) {
+    function getScheduledWithdraw(address tokenAddress, address user)
+        external
+        view
+        returns (uint256 amount, uint256 timestamp)
+    {
         // Return the scheduled amount for the caller (vault), not the end user
         ScheduleState storage state = scheduledWithdraws[tokenAddress];
         return (state.amount, state.timestamp);
     }
-} 
+}

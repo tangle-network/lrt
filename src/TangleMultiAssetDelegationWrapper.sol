@@ -9,22 +9,22 @@ import {ERC20} from "../dependencies/solmate-6.8.0/src/tokens/ERC20.sol";
 /// @dev Provides delegation lifecycle management for a specific ERC20 token
 abstract contract TangleMultiAssetDelegationWrapper {
     /* ============ Events ============ */
-    
+
     /// @notice Emitted when delegation occurs
     event Delegated(bytes32 indexed operator, uint256 amount, uint64[] blueprintSelection);
-    
+
     /// @notice Emitted when unstake is scheduled
     event UnstakeScheduled(bytes32 indexed operator, uint256 amount);
-    
+
     /// @notice Emitted when unstake is cancelled
     event UnstakeCancelled(bytes32 indexed operator, uint256 amount);
-    
-    /// @notice Emitted when withdrawal is scheduled  
+
+    /// @notice Emitted when withdrawal is scheduled
     event WithdrawalScheduled(uint256 amount);
-    
+
     /// @notice Emitted when withdrawal is cancelled
     event WithdrawalCancelled(uint256 amount);
-    
+
     /// @notice Emitted when assets are deposited
     event Deposited(uint256 amount);
 
@@ -54,7 +54,7 @@ abstract contract TangleMultiAssetDelegationWrapper {
             amount,
             0 // Lock multiplier
         );
-        
+
         emit Deposited(amount);
     }
 
@@ -62,19 +62,9 @@ abstract contract TangleMultiAssetDelegationWrapper {
     /// @param operator The operator to delegate to
     /// @param amount Amount of assets to delegate
     /// @param blueprintSelection Blueprint selection for delegation
-    function _delegate(
-        bytes32 operator,
-        uint256 amount,
-        uint64[] memory blueprintSelection
-    ) internal {
-        mads.delegate(
-            operator,
-            0,
-            address(token),
-            amount,
-            blueprintSelection
-        );
-        
+    function _delegate(bytes32 operator, uint256 amount, uint64[] memory blueprintSelection) internal {
+        mads.delegate(operator, 0, address(token), amount, blueprintSelection);
+
         emit Delegated(operator, amount, blueprintSelection);
     }
 
@@ -82,13 +72,8 @@ abstract contract TangleMultiAssetDelegationWrapper {
     /// @param operator The operator to unstake from
     /// @param amount Amount of assets to unstake
     function _scheduleUnstake(bytes32 operator, uint256 amount) internal {
-        mads.scheduleDelegatorUnstake(
-            operator,
-            0,
-            address(token),
-            amount
-        );
-        
+        mads.scheduleDelegatorUnstake(operator, 0, address(token), amount);
+
         emit UnstakeScheduled(operator, amount);
     }
 
@@ -96,13 +81,8 @@ abstract contract TangleMultiAssetDelegationWrapper {
     /// @param operator The operator to cancel unstake from
     /// @param amount Amount of assets to cancel unstaking
     function _cancelUnstake(bytes32 operator, uint256 amount) internal {
-        mads.cancelDelegatorUnstake(
-            operator,
-            0,
-            address(token),
-            amount
-        );
-        
+        mads.cancelDelegatorUnstake(operator, 0, address(token), amount);
+
         emit UnstakeCancelled(operator, amount);
     }
 
@@ -114,24 +94,16 @@ abstract contract TangleMultiAssetDelegationWrapper {
     /// @notice Schedule withdrawal of assets
     /// @param amount Amount of assets to withdraw
     function _scheduleWithdraw(uint256 amount) internal {
-        mads.scheduleWithdraw(
-            0,
-            address(token),
-            amount
-        );
-        
+        mads.scheduleWithdraw(0, address(token), amount);
+
         emit WithdrawalScheduled(amount);
     }
 
     /// @notice Cancel a scheduled withdrawal
     /// @param amount Amount of assets to cancel withdrawal
     function _cancelWithdraw(uint256 amount) internal {
-        mads.cancelWithdraw(
-            0,
-            address(token),
-            amount
-        );
-        
+        mads.cancelWithdraw(0, address(token), amount);
+
         emit WithdrawalCancelled(amount);
     }
 
@@ -139,4 +111,4 @@ abstract contract TangleMultiAssetDelegationWrapper {
     function _executeWithdraw() internal {
         mads.executeWithdraw();
     }
-} 
+}

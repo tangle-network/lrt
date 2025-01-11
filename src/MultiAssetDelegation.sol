@@ -73,14 +73,21 @@ interface MultiAssetDelegation {
     /// @param tokenAddress The address of the ERC20 token (if assetId is 0).
     /// @param amount The amount to delegate.
     /// @param blueprintSelection The blueprint selection.
-    function delegate(bytes32 operator, uint256 assetId, address tokenAddress, uint256 amount, uint64[] memory blueprintSelection) external;
+    function delegate(
+        bytes32 operator,
+        uint256 assetId,
+        address tokenAddress,
+        uint256 amount,
+        uint64[] memory blueprintSelection
+    ) external;
 
     /// @dev Schedule an unstake of an amount of an asset as a delegator.
     /// @param operator The address of the operator.
     /// @param assetId The ID of the asset (0 for ERC20).
     /// @param tokenAddress The address of the ERC20 token (if assetId is 0).
     /// @param amount The amount to unstake.
-    function scheduleDelegatorUnstake(bytes32 operator, uint256 assetId, address tokenAddress, uint256 amount) external;
+    function scheduleDelegatorUnstake(bytes32 operator, uint256 assetId, address tokenAddress, uint256 amount)
+        external;
 
     /// @dev Execute the scheduled unstake as a delegator.
     function executeDelegatorUnstake() external;
