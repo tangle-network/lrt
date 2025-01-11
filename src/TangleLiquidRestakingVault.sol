@@ -293,12 +293,14 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         address receiver,
         address owner
     ) public override returns (uint256 shares) {
-        // Verify withdrawal is scheduled and ready
-        uint256 scheduled = scheduledWithdrawAmount[owner];
-        if (assets > scheduled) revert ExceedsScheduledAmount();
-        
-        // Execute withdrawal through MADS first
+        // Check that withdrawal has been scheduled
+        if (scheduledWithdrawAmount[owner] < assets) revert NoScheduledAmount();
+
+        // Check withdrawal delay through MADS
         _executeWithdraw();
+
+        // Update tracking
+        scheduledWithdrawAmount[owner] = scheduledWithdrawAmount[owner] - assets;
         
         // Calculate shares before burning
         shares = previewWithdraw(assets);
@@ -321,9 +323,6 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
             }
         }
         
-        // Update tracking
-        scheduledWithdrawAmount[owner] = scheduled - assets;
-        
         // Complete withdrawal
         return super.withdraw(assets, receiver, owner);
     }
@@ -339,6 +338,18 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         address receiver,
         address owner
     ) public override returns (uint256 assets) {
+        // Calculate assets being redeemed
+        assets = previewRedeem(shares);
+
+        // Check that withdrawal has been scheduled
+        if (scheduledWithdrawAmount[owner] < assets) revert NoScheduledAmount();
+
+        // Check withdrawal delay through MADS
+        _executeWithdraw();
+
+        // Update tracking
+        scheduledWithdrawAmount[owner] = scheduledWithdrawAmount[owner] - assets;
+
         // Process checkpoints before burning shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();

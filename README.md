@@ -4,17 +4,14 @@ A smart contract vault that enables liquid restaking on Tangle Network using Sol
 
 ## Overview
 
-This vault allows users to deposit tokens which get delegated to Tangle operators running blueprint services, while receiving a liquid staking token in return. The vault handles the complexities of managing deposits, unstaking, and withdrawals.
+This vault allows users to deposit tokens which get delegated to Tangle operators running blueprint services, while receiving a liquid token in return. The vault handles the complexities of managing deposits, unstaking, and withdrawals.
 
-Two vault implementations are provided:
-
-- **TangleLiquidRestakingVault**: For native asset (ETH) deposits
-- **TangleLiquidRestakingTokenVault**: For ERC20 token deposits
+Vault curators select their underlying ERC20, operator, and blueprint selections for exposure on the Tangle Network. Users can deposit their tokens into the vault, which then delegates them to the selected operator. In return, users receive shares representing their deposited tokens. The vault receives the rewards from the operator and distributes them to the users based on their share holdings.
 
 ## Key Features
 
-- **Liquid Staking**: Users receive shares representing their deposited ETH
-- **Operator Delegation**: Automatically delegates assets to configured Tangle operators
+- **Liquid Restaking**: Users receive shares representing their deposited ERC20s
+- **Operator Delegation**: Automatically delegates assets to a selected Tangle operator
 - **Multi-step Withdrawals**: Handles the withdrawal process across both protocols:
   1. Schedule unstake from operator
   2. Schedule withdrawal from vault
