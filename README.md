@@ -40,7 +40,7 @@ The vault is built on two main components:
 ```mermaid
 graph TD
 A[Deposit ETH] --> B[Receive Shares]
-B --> C[ETH Delegated to Operator]
+B --> C[ERC20 Delegated to Operator]
 C --> D[Schedule Unstake]
 D --> E[Schedule Withdraw]
 E --> F[Execute Withdraw]
