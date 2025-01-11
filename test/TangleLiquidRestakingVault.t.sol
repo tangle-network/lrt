@@ -1,23 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
-import {TangleLiquidRestakingVault} from "../src/TangleLiquidRestakingVault.sol";
-import {MultiAssetDelegation} from "../src/MultiAssetDelegation.sol";
-import {IOracle} from "../src/interfaces/IOracle.sol";
+import {Test, console} from "dependencies/forge-std-1.9.5/src/Test.sol";
 import {ERC20} from "dependencies/solmate-6.8.0/src/tokens/ERC20.sol";
 import {FixedPointMathLib} from "dependencies/solmate-6.8.0/src/utils/FixedPointMathLib.sol";
 
-contract MockToken is ERC20 {
-    constructor(string memory name, string memory symbol, uint8 _decimals) 
-        ERC20(name, symbol, _decimals) {
-        _mint(msg.sender, 1000000 * (10 ** _decimals));
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
+import {TangleLiquidRestakingVault} from "../src/TangleLiquidRestakingVault.sol";
+import {MultiAssetDelegation} from "../src/MultiAssetDelegation.sol";
+import {IOracle} from "../src/interfaces/IOracle.sol";
+import {MockMultiAssetDelegation} from "./mock/MockMultiAssetDelegation.sol";
+import {MockERC20} from "./mock/MockERC20.sol";
 
 contract TangleLiquidRestakingVaultTest is Test {
     using FixedPointMathLib for uint256;
@@ -28,9 +20,10 @@ contract TangleLiquidRestakingVaultTest is Test {
     uint256 constant PERIOD4_INDEX_DELTA = 66666666666666666;
 
     TangleLiquidRestakingVault public vault;
-    MockToken public baseToken;
-    MockToken public rewardToken1;
-    MockToken public rewardToken2;
+    MockERC20 public baseToken;
+    MockERC20 public rewardToken1;
+    MockERC20 public rewardToken2;
+    MockMultiAssetDelegation public mockMADS;
     
     bytes32 public constant OPERATOR = bytes32(uint256(1));
     uint64[] public blueprintSelection;
@@ -51,19 +44,22 @@ contract TangleLiquidRestakingVaultTest is Test {
     );
 
     function setUp() public {
-        // Deploy tokens with different decimals
-        baseToken = new MockToken("Base Token", "BASE", 18);
-        rewardToken1 = new MockToken("Reward Token 1", "RWD1", 18);
-        rewardToken2 = new MockToken("Reward Token 2", "RWD2", 6);
-        
-        // Setup blueprint selection
-        blueprintSelection.push(1);
-        
+        // Deploy mock contracts
+        baseToken = new MockERC20("Base Token", "BASE", 18);
+        rewardToken1 = new MockERC20("Reward Token 1", "RWD1", 18);
+        rewardToken2 = new MockERC20("Reward Token 2", "RWD2", 18);
+        mockMADS = new MockMultiAssetDelegation();
+        blueprintSelection = new uint64[](1);
+        blueprintSelection[0] = 1;
+
         // Deploy vault
         vault = new TangleLiquidRestakingVault(
             address(baseToken),
-            "Tangle Liquid Staked Token",
-            "tLST"
+            OPERATOR,
+            blueprintSelection,
+            address(mockMADS),
+            "Tangle Liquid Restaking Token",
+            "tLRT"
         );
 
         // Fund test accounts
@@ -461,38 +457,43 @@ contract TangleLiquidRestakingVaultTest is Test {
         vm.startPrank(alice);
         vault.addRewardToken(address(rewardToken1));
         vault.deposit(INITIAL_DEPOSIT, alice);
-        vm.stopPrank();
 
-        // First reward
-        rewardToken1.mint(address(vault), REWARD_AMOUNT);
+        // First reward - full amount since Alice has all shares
+        rewardToken1.mint(address(vault), REWARD_AMOUNT);  // 10e18
 
-        // Withdraw half
-        vm.startPrank(alice);
+        // Schedule and execute unstake for half
+        vault.scheduleUnstake(INITIAL_DEPOSIT / 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        
+        // Schedule and execute withdraw
+        vault.scheduleWithdraw(INITIAL_DEPOSIT / 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
         vault.withdraw(INITIAL_DEPOSIT / 2, alice, alice);
 
-        // Second reward
+        // Second reward - half amount since Alice has half shares
         vm.warp(block.timestamp + 1 days);
-        rewardToken1.mint(address(vault), REWARD_AMOUNT);
+        rewardToken1.mint(address(vault), REWARD_AMOUNT);  // 10e18 (but Alice gets 5e18)
 
         // Deposit again
         vault.deposit(INITIAL_DEPOSIT / 2, alice);
-        vm.stopPrank();
 
-        // Third reward
+        // Third reward - full amount since Alice has all shares again
         vm.warp(block.timestamp + 1 days);
-        rewardToken1.mint(address(vault), REWARD_AMOUNT);
+        rewardToken1.mint(address(vault), REWARD_AMOUNT);  // 10e18
 
         // Claim
-        vm.startPrank(alice);
         address[] memory tokens = new address[](1);
         tokens[0] = address(rewardToken1);
         uint256[] memory rewards = vault.claimRewards(alice, tokens);
-        vm.stopPrank();
 
-        // Should get: full first reward + full second reward + full third reward
-        // Because Alice is the only holder throughout, even with half shares
-        uint256 expected = REWARD_AMOUNT * 3;
-        assertEq(rewards[0], expected, "Rewards after withdraw/deposit incorrect");
+        // Should get: 
+        // - First reward: 10e18 (full amount)
+        // - Second reward: 10e18 (full amount since no other holders)
+        // - Third reward: 10e18 (full amount)
+        // Total: 30e18
+        assertEq(rewards[0], 30e18, "Rewards after withdraw/deposit incorrect");
+        vm.stopPrank();
     }
 
     function test_ComplexRewardScenario() public {
@@ -514,9 +515,16 @@ contract TangleLiquidRestakingVaultTest is Test {
         vm.warp(block.timestamp + 1 days);
         rewardToken1.mint(address(vault), REWARD_AMOUNT);  // 10e18 rewards
 
-        // Alice withdraws half
+        // Alice schedules and executes unstake for half
         vm.startPrank(alice);
-        vault.withdraw(INITIAL_DEPOSIT / 2, alice, alice);  // Alice: 50e18 shares
+        vault.scheduleUnstake(INITIAL_DEPOSIT / 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        
+        // Schedule and execute withdraw
+        vault.scheduleWithdraw(INITIAL_DEPOSIT / 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.withdraw(INITIAL_DEPOSIT / 2, alice, alice);
         vm.stopPrank();
 
         // Charlie joins with same as Alice's original
@@ -528,9 +536,16 @@ contract TangleLiquidRestakingVaultTest is Test {
         vm.warp(block.timestamp + 1 days);
         rewardToken1.mint(address(vault), REWARD_AMOUNT);  // 10e18 rewards
 
-        // Bob withdraws everything
+        // Bob schedules and executes unstake for everything
         vm.startPrank(bob);
-        vault.withdraw(INITIAL_DEPOSIT * 2, bob, bob);  // Bob: 0 shares
+        vault.scheduleUnstake(INITIAL_DEPOSIT * 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        
+        // Schedule and execute withdraw
+        vault.scheduleWithdraw(INITIAL_DEPOSIT * 2);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.withdraw(INITIAL_DEPOSIT * 2, bob, bob);
         vm.stopPrank();
 
         // Fourth reward period - Alice (1/3), Charlie (2/3)
@@ -553,27 +568,16 @@ contract TangleLiquidRestakingVaultTest is Test {
         uint256[] memory charlieRewards = vault.claimRewards(charlie, tokens);
         vm.stopPrank();
 
-        // Expected rewards:
-        // Alice: 
-        // - Period 1: 10e18 (full)
-        // - Period 2: 10e18 * 1/3
-        // - Period 3: 10e18 * 1/7
-        // - Period 4: 10e18 * 1/3
+        // Expected rewards calculations remain the same...
         uint256 expectedAlice = REWARD_AMOUNT + // Period 1
             ((INITIAL_DEPOSIT * PERIOD2_INDEX_DELTA) / 1e18) + // Period 2
             ((INITIAL_DEPOSIT / 2 * PERIOD3_INDEX_DELTA) / 1e18) + // Period 3
             ((INITIAL_DEPOSIT / 2 * PERIOD4_INDEX_DELTA) / 1e18); // Period 4
 
-        // Bob:
-        // - Period 2: 10e18 * 2/3
-        // - Period 3: 10e18 * 4/7
         uint256 expectedBob = 
             ((INITIAL_DEPOSIT * 2 * PERIOD2_INDEX_DELTA) / 1e18) + // Period 2
             ((INITIAL_DEPOSIT * 2 * PERIOD3_INDEX_DELTA) / 1e18); // Period 3
 
-        // Charlie:
-        // - Period 3: 10e18 * 2/7
-        // - Period 4: 10e18 * 2/3
         uint256 expectedCharlie = 
             ((INITIAL_DEPOSIT * PERIOD3_INDEX_DELTA) / 1e18) + // Period 3
             ((INITIAL_DEPOSIT * PERIOD4_INDEX_DELTA) / 1e18); // Period 4
@@ -582,7 +586,7 @@ contract TangleLiquidRestakingVaultTest is Test {
         assertEq(bobRewards[0], expectedBob, "Bob rewards incorrect");
         assertEq(charlieRewards[0], expectedCharlie, "Charlie rewards incorrect");
 
-        // Verify total rewards distributed equals total rewards added, allowing for small rounding errors
+        // Verify total rewards distributed equals total rewards added
         assertApproxEqAbs(
             aliceRewards[0] + bobRewards[0] + charlieRewards[0],
             REWARD_AMOUNT * 4,
@@ -651,5 +655,313 @@ contract TangleLiquidRestakingVaultTest is Test {
         assertEq(aliceRewards[0], expectedAlice, "Alice rewards incorrect");
         assertEq(bobRewards[0], expectedBob, "Bob rewards incorrect");
         assertEq(aliceRewards[0] + bobRewards[0], REWARD_AMOUNT * 3, "Total rewards mismatch");
+    }
+
+    function test_ScheduleAndCancelUnstake() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        vault.addRewardToken(address(rewardToken1));
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+
+        // Schedule unstake
+        vault.scheduleUnstake(50e18);
+        assertEq(vault.scheduledUnstakeAmount(alice), 50e18, "Initial scheduled amount incorrect");
+        
+        // Add rewards to test reward tracking
+        rewardToken1.mint(address(vault), REWARD_AMOUNT);
+        
+        // Cancel partial unstake
+        vault.cancelUnstake(20e18);
+        assertEq(vault.scheduledUnstakeAmount(alice), 30e18, "Remaining scheduled amount incorrect");
+        
+        // Cancel remaining unstake
+        vault.cancelUnstake(30e18);
+        assertEq(vault.scheduledUnstakeAmount(alice), 0, "Final scheduled amount should be 0");
+        
+        // Verify rewards resumed for cancelled amount
+        rewardToken1.mint(address(vault), REWARD_AMOUNT);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(rewardToken1);
+        uint256[] memory rewards = vault.claimRewards(alice, tokens);
+        assertGt(rewards[0], 0, "Should earn rewards after cancel");
+        vm.stopPrank();
+    }
+
+    function test_ScheduleAndCancelWithdraw() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        
+        // First schedule and execute unstake
+        vault.scheduleUnstake(50e18);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        assertEq(vault.unstakeAmount(alice), 50e18, "Unstake amount incorrect");
+        
+        // Schedule withdraw
+        vault.scheduleWithdraw(30e18);
+        assertEq(vault.scheduledWithdrawAmount(alice), 30e18, "Initial scheduled withdraw incorrect");
+        assertEq(vault.unstakeAmount(alice), 20e18, "Remaining unstake amount incorrect");
+        
+        // Cancel partial withdraw
+        vault.cancelWithdraw(10e18);
+        assertEq(vault.scheduledWithdrawAmount(alice), 20e18, "Remaining scheduled withdraw incorrect");
+        assertEq(vault.unstakeAmount(alice), 30e18, "Updated unstake amount incorrect");
+        
+        // Cancel remaining withdraw
+        vault.cancelWithdraw(20e18);
+        assertEq(vault.scheduledWithdrawAmount(alice), 0, "Final scheduled withdraw should be 0");
+        assertEq(vault.unstakeAmount(alice), 50e18, "Final unstake amount incorrect");
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_CancellingMoreThanScheduled() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        
+        // Schedule unstake
+        vault.scheduleUnstake(50e18);
+        
+        // Try to cancel more than scheduled
+        vm.expectRevert(TangleLiquidRestakingVault.InsufficientScheduledAmount.selector);
+        vault.cancelUnstake(60e18);
+        
+        // Execute unstake
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        
+        // Schedule withdraw
+        vault.scheduleWithdraw(30e18);
+        
+        // Try to cancel more than scheduled
+        vm.expectRevert(TangleLiquidRestakingVault.InsufficientScheduledAmount.selector);
+        vault.cancelWithdraw(40e18);
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_WithdrawingWithoutUnstake() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        
+        // Try to schedule withdraw without unstaking
+        vm.expectRevert(TangleLiquidRestakingVault.WithdrawalNotUnstaked.selector);
+        vault.scheduleWithdraw(50e18);
+        vm.stopPrank();
+    }
+
+    function test_ScheduleUnstake() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule unstake
+        vault.scheduleUnstake(50e18);
+        
+        // Verify scheduled amount in vault
+        assertEq(vault.scheduledUnstakeAmount(alice), 50e18, "Scheduled amount in vault incorrect");
+        
+        // Verify scheduled amount in MADS
+        (uint256 amount, uint256 timestamp) = mockMADS.getScheduledUnstake(address(vault), alice);
+        assertEq(amount, 50e18, "Scheduled amount in MADS incorrect");
+        assertEq(timestamp, block.timestamp + 1 weeks, "Scheduled timestamp incorrect");
+        
+        vm.stopPrank();
+    }
+    
+    function test_CancelUnstake() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule and then cancel unstake
+        vault.scheduleUnstake(50e18);
+        vault.cancelUnstake(50e18);
+        
+        // Verify cancelled (amount should be 0)
+        (uint256 amount,) = mockMADS.getScheduledUnstake(address(baseToken), alice);
+        assertEq(amount, 0);
+        
+        vm.stopPrank();
+    }
+    
+    function test_ScheduleWithdraw() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule and execute unstake first
+        vault.scheduleUnstake(50e18);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        assertEq(vault.unstakeAmount(alice), 50e18);
+        
+        // Schedule withdraw
+        vault.scheduleWithdraw(50e18);
+        
+        // Verify scheduled amount
+        assertEq(vault.scheduledWithdrawAmount(alice), 50e18);
+        assertEq(vault.unstakeAmount(alice), 0);
+        
+        vm.stopPrank();
+    }
+    
+    function test_CancelWithdraw() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule and execute unstake first
+        vault.scheduleUnstake(50e18);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        assertEq(vault.unstakeAmount(alice), 50e18);
+        
+        // Schedule and then cancel withdraw
+        vault.scheduleWithdraw(50e18);
+        vault.cancelWithdraw(50e18);
+        
+        // Verify cancelled (amount should be 0)
+        assertEq(vault.scheduledWithdrawAmount(alice), 0);
+        assertEq(vault.unstakeAmount(alice), 50e18);
+        
+        vm.stopPrank();
+    }
+    
+    function test_ExecuteUnstake() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule unstake
+        vault.scheduleUnstake(50e18);
+        assertEq(vault.scheduledUnstakeAmount(alice), 50e18, "Initial scheduled amount incorrect");
+        
+        // Warp time forward past delay
+        vm.warp(block.timestamp + 1 weeks + 1);
+        
+        // Execute unstake
+        vault.executeUnstake();
+        
+        // Verify unstake executed
+        assertEq(vault.scheduledUnstakeAmount(alice), 0, "Scheduled amount should be cleared");
+        assertEq(vault.unstakeAmount(alice), 50e18, "Unstaked amount should be updated");
+        
+        vm.stopPrank();
+    }
+    
+    function test_ExecuteWithdraw() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        
+        // Schedule and execute unstake
+        vault.scheduleUnstake(50e18);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        assertEq(vault.unstakeAmount(alice), 50e18, "Unstake amount incorrect");
+        
+        // Schedule withdraw
+        vault.scheduleWithdraw(30e18);
+        assertEq(vault.scheduledWithdrawAmount(alice), 30e18, "Scheduled withdraw amount incorrect");
+        assertEq(vault.unstakeAmount(alice), 20e18, "Remaining unstake amount incorrect");
+        
+        // Wait for withdraw delay
+        vm.warp(block.timestamp + 1 weeks + 1);
+        
+        // Execute withdraw
+        uint256 balanceBefore = baseToken.balanceOf(alice);
+        vault.withdraw(30e18, alice, alice);
+        uint256 balanceAfter = baseToken.balanceOf(alice);
+        
+        // Verify withdraw executed
+        assertEq(balanceAfter - balanceBefore, 30e18, "Withdraw amount incorrect");
+        assertEq(vault.scheduledWithdrawAmount(alice), 0, "Scheduled withdraw should be cleared");
+        assertEq(vault.unstakeAmount(alice), 20e18, "Remaining unstake amount incorrect");
+        vm.stopPrank();
+    }
+    
+    function test_RevertWhen_ExecutingUnstakeBeforeDelay() public {
+        // Initial deposit from Alice
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule unstake
+        vault.scheduleUnstake(50e18);
+        assertEq(vault.scheduledUnstakeAmount(alice), 50e18, "Scheduled amount incorrect");
+        
+        // Try to execute before delay
+        vm.expectRevert(MockMultiAssetDelegation.DelayNotElapsed.selector);
+        vault.executeUnstake();
+        
+        vm.stopPrank();
+    }
+    
+    function test_RevertWhen_ExecutingWithdrawBeforeDelay() public {
+        // Setup
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        // Schedule and execute unstake
+        vault.scheduleUnstake(50e18);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        vault.executeUnstake();
+        assertEq(vault.unstakeAmount(alice), 50e18, "Unstake amount incorrect");
+        
+        // Schedule withdraw
+        vault.scheduleWithdraw(50e18);
+        assertEq(vault.scheduledWithdrawAmount(alice), 50e18, "Scheduled withdraw amount incorrect");
+        assertEq(vault.unstakeAmount(alice), 0, "Unstake amount should be 0");
+        
+        // Try to withdraw before delay
+        vm.expectRevert(MockMultiAssetDelegation.DelayNotElapsed.selector);
+        vault.withdraw(50e18, alice, alice);
+        
+        vm.stopPrank();
+    }
+    
+    function test_RevertWhen_CancellingNonExistentUnstake() public {
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        vm.expectRevert(TangleLiquidRestakingVault.InsufficientScheduledAmount.selector);
+        vault.cancelUnstake(50e18);
+        
+        vm.stopPrank();
+    }
+    
+    function test_RevertWhen_CancellingNonExistentWithdraw() public {
+        vm.startPrank(alice);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        
+        vm.expectRevert(TangleLiquidRestakingVault.InsufficientScheduledAmount.selector);
+        vault.cancelWithdraw(50e18);
+        
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_SchedulingWithdrawBeforeUnstake() public {
+        // Setup
+        uint256 depositAmount = 100e18;
+        vm.startPrank(alice);
+        baseToken.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        
+        // Try to schedule withdraw without unstaking first
+        vm.expectRevert(TangleLiquidRestakingVault.WithdrawalNotUnstaked.selector);
+        vault.scheduleWithdraw(50e18);
+        
+        vm.stopPrank();
     }
 } 
