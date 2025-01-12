@@ -51,13 +51,13 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param amount The amount of rewards claimed
     event RewardsClaimed(address indexed user, address indexed token, uint256 amount);
 
-    /// @notice Emitted when a new checkpoint is created for a user
-    /// @param user The user the checkpoint is for
-    /// @param token The reward token the checkpoint is for
-    /// @param index The global reward index at checkpoint time
-    /// @param timestamp When the checkpoint was created
+    /// @notice Emitted when a new snapshot is created for a user
+    /// @param user The user the snapshot is for
+    /// @param token The reward token the snapshot is for
+    /// @param index The global reward index at snapshot time
+    /// @param timestamp When the snapshot was created
     /// @param rewardIndex The index in the rewardTimestamps array
-    event CheckpointCreated(
+    event RewardSnapshotCreated(
         address indexed user, address indexed token, uint256 index, uint256 timestamp, uint256 rewardIndex
     );
 
@@ -94,15 +94,15 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
 
     /* ============ Types ============ */
 
-    /// @notice Tracks user's reward checkpoint for a token
-    /// @dev Used to calculate rewards between checkpoint creation and current time
+    /// @notice Tracks user's reward snapshot for a token
+    /// @dev Used to calculate rewards between snapshot creation and current time
     /// Historical rewards are stored in pendingRewards to maintain claim integrity
-    struct Checkpoint {
-        uint256 rewardIndex; // Global index at checkpoint creation
-        uint256 timestamp; // When checkpoint was created
-        uint256 shareBalance; // User's share balance at checkpoint
+    struct RewardSnapshot {
+        uint256 rewardIndex; // Global index at snapshot creation
+        uint256 timestamp; // When snapshot was created
+        uint256 shareBalance; // User's share balance at snapshot
         uint256 lastRewardIndex; // Index in rewardTimestamps array
-        uint256 pendingRewards; // Unclaimed rewards at checkpoint
+        uint256 pendingRewards; // Unclaimed rewards at snapshot
     }
 
     /// @notice Tracks global reward state for a token
@@ -126,9 +126,9 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @dev Tracks global indices and reward history
     mapping(address => RewardData) public rewardData;
 
-    /// @notice User reward checkpoints per token
-    /// @dev Maps user => token => checkpoint data
-    mapping(address => mapping(address => Checkpoint)) public userCheckpoints;
+    /// @notice User reward snapshots per token
+    /// @dev Maps user => token => snapshot data
+    mapping(address => mapping(address => RewardSnapshot)) public userSnapshots;
 
     /// @notice Tracks unstaking status for withdrawals
     mapping(address => uint256) public unstakeAmount;
@@ -193,8 +193,8 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @dev Claims all pending rewards for given tokens
     /// For each token:
     /// 1. Updates global index to include any new rewards
-    /// 2. Calculates user's entitled rewards since last checkpoint
-    /// 3. Transfers rewards and creates new checkpoint
+    /// 2. Calculates user's entitled rewards since last snapshot
+    /// 3. Transfers rewards and creates new snapshot
     /// Requirements:
     /// - Caller must be the user claiming rewards
     /// - Tokens must be valid reward tokens
@@ -218,30 +218,30 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     }
 
     /// @notice Transfer shares to another address
-    /// @dev Overrides ERC20 transfer to handle reward checkpoints
+    /// @dev Overrides ERC20 transfer to handle reward snapshots
     /// Historical rewards stay with sender, recipient starts fresh
     /// @param to Recipient of the shares
     /// @param amount Number of shares to transfer
     /// @return success Whether transfer succeeded
     function transfer(address to, uint256 amount) public override returns (bool) {
-        _processRewardCheckpoints(msg.sender, to, amount);
+        _processRewardSnapshots(msg.sender, to, amount);
         return super.transfer(to, amount);
     }
 
     /// @notice Transfer shares from one address to another
-    /// @dev Overrides ERC20 transferFrom to handle reward checkpoints
+    /// @dev Overrides ERC20 transferFrom to handle reward snapshots
     /// Historical rewards stay with sender, recipient starts fresh
     /// @param from Sender of the shares
     /// @param to Recipient of the shares
     /// @param amount Number of shares to transfer
     /// @return success Whether transfer succeeded
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
-        _processRewardCheckpoints(from, to, amount);
+        _processRewardSnapshots(from, to, amount);
         return super.transferFrom(from, to, amount);
     }
 
     /// @notice Deposit assets into vault and delegate
-    /// @dev Overrides ERC4626 deposit to handle reward checkpoints and delegation
+    /// @dev Overrides ERC4626 deposit to handle reward snapshots and delegation
     /// @param assets Amount of assets to deposit
     /// @param receiver Recipient of the shares
     /// @return shares Amount of shares minted
@@ -249,7 +249,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Calculate shares before minting
         shares = previewDeposit(assets);
 
-        // Process checkpoints for new shares
+        // Process snapshots for new shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();
             for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -258,9 +258,9 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
                 // Calculate rewards earned by existing shares
                 uint256 existingRewards = _calculatePendingRewards(receiver, token);
 
-                // Create new checkpoint with existing rewards
+                // Create new snapshot with existing rewards
                 // New shares will start earning from current index
-                _createCheckpoint(receiver, token, balanceOf[receiver] + shares, existingRewards);
+                _createSnapshot(receiver, token, balanceOf[receiver] + shares, existingRewards);
             }
         }
 
@@ -272,7 +272,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     }
 
     /// @notice Execute withdrawal after delay
-    /// @dev Overrides ERC4626 withdraw to handle reward checkpoints
+    /// @dev Overrides ERC4626 withdraw to handle reward snapshots
     /// @param assets Amount of assets to withdraw
     /// @param receiver Recipient of the assets
     /// @param owner Owner of the shares
@@ -290,7 +290,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Calculate shares before burning
         shares = previewWithdraw(assets);
 
-        // Process checkpoints before burning shares
+        // Process snapshots before burning shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();
             for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -298,8 +298,8 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
                 // Calculate pending rewards before withdrawal
                 uint256 pendingRewards = _calculatePendingRewards(owner, token);
 
-                // Create checkpoint with remaining shares and all pending rewards
-                _createCheckpoint(owner, token, balanceOf[owner] - shares, pendingRewards);
+                // Create snapshot with remaining shares and all pending rewards
+                _createSnapshot(owner, token, balanceOf[owner] - shares, pendingRewards);
             }
         }
 
@@ -308,7 +308,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     }
 
     /// @notice Redeem shares for assets
-    /// @dev Overrides ERC4626 redeem to handle reward checkpoints
+    /// @dev Overrides ERC4626 redeem to handle reward snapshots
     /// @param shares Amount of shares to redeem
     /// @param receiver Recipient of the assets
     /// @param owner Owner of the shares
@@ -326,7 +326,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Update tracking
         scheduledWithdrawAmount[owner] = scheduledWithdrawAmount[owner] - assets;
 
-        // Process checkpoints before burning shares
+        // Process snapshots before burning shares
         if (rewardTokens.length > 0) {
             _updateAllRewardIndices();
             for (uint256 i = 0; i < rewardTokens.length; i++) {
@@ -334,8 +334,8 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
                 // Calculate pending rewards before redemption
                 uint256 pendingRewards = _calculatePendingRewards(owner, token);
 
-                // Create checkpoint with remaining shares and all pending rewards
-                _createCheckpoint(owner, token, balanceOf[owner] - shares, pendingRewards);
+                // Create snapshot with remaining shares and all pending rewards
+                _createSnapshot(owner, token, balanceOf[owner] - shares, pendingRewards);
             }
         }
 
@@ -353,8 +353,8 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Track scheduled unstake
         scheduledUnstakeAmount[msg.sender] += assets;
 
-        // Process checkpoints to stop reward accrual for these shares
-        _processRewardCheckpoints(msg.sender, address(0), shares);
+        // Process snapshots to stop reward accrual for these shares
+        _processRewardSnapshots(msg.sender, address(0), shares);
 
         // Schedule unstake through wrapper
         _scheduleUnstake(operator, assets);
@@ -424,16 +424,16 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Cancel unstake through wrapper
         _cancelUnstake(operator, assets);
 
-        // Process checkpoints to resume reward accrual
+        // Process snapshots to resume reward accrual
         uint256 shares = previewWithdraw(assets);
-        _processRewardCheckpoints(msg.sender, msg.sender, shares);
+        _processRewardSnapshots(msg.sender, msg.sender, shares);
 
         emit UnstakeCancelled(msg.sender, assets);
     }
 
     /* ============ Internal Functions ============ */
 
-    /// @notice Process reward checkpoints for share transfers
+    /// @notice Process reward snapshots for share transfers
     /// @dev Core reward accounting logic for transfers
     /// Key behaviors:
     /// 1. Updates indices to include new rewards
@@ -442,7 +442,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @param from Sender address
     /// @param to Recipient address (or 0 for burns)
     /// @param amount Number of shares being transferred
-    function _processRewardCheckpoints(address from, address to, uint256 amount) internal {
+    function _processRewardSnapshots(address from, address to, uint256 amount) internal {
         if (rewardTokens.length == 0) return;
 
         uint256 fromBalance = balanceOf[from];
@@ -458,28 +458,28 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
             uint256 pendingRewards = _calculatePendingRewards(from, token);
 
             // Original holder keeps all historical rewards
-            _createCheckpoint(from, token, fromBalance - amount, pendingRewards);
+            _createSnapshot(from, token, fromBalance - amount, pendingRewards);
 
             if (to != address(0)) {
                 // Calculate recipient's existing rewards
                 uint256 recipientRewards = _calculatePendingRewards(to, token);
 
                 // Recipient keeps their existing rewards and gets new balance
-                _createCheckpoint(to, token, toBalance + amount, recipientRewards);
+                _createSnapshot(to, token, toBalance + amount, recipientRewards);
             }
         }
     }
 
-    /// @notice Create checkpoint for user's reward state
+    /// @notice Create snapshot for user's reward state
     /// @dev Records user's share balance and pending rewards at current index
     /// Used to calculate future rewards from this point
     /// @param user User address
     /// @param token Reward token address
     /// @param newBalance User's new share balance
     /// @param pendingRewards Unclaimed rewards to store
-    function _createCheckpoint(address user, address token, uint256 newBalance, uint256 pendingRewards) internal {
+    function _createSnapshot(address user, address token, uint256 newBalance, uint256 pendingRewards) internal {
         RewardData storage rData = rewardData[token];
-        userCheckpoints[user][token] = Checkpoint({
+        userSnapshots[user][token] = RewardSnapshot({
             rewardIndex: rData.index,
             timestamp: block.timestamp,
             shareBalance: newBalance,
@@ -487,25 +487,25 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
             pendingRewards: pendingRewards
         });
 
-        emit CheckpointCreated(user, token, rData.index, block.timestamp, rData.rewardTimestamps.length);
+        emit RewardSnapshotCreated(user, token, rData.index, block.timestamp, rData.rewardTimestamps.length);
     }
 
     /// @notice Calculate pending rewards for a user
-    /// @dev Calculates rewards earned since last checkpoint
+    /// @dev Calculates rewards earned since last snapshot
     /// Formula: (shareBalance * indexDelta / REWARD_FACTOR) + storedRewards
     /// Uses mulDivUp for final calculation to prevent dust
     /// @param user User address
     /// @param token Reward token address
     /// @return Total pending rewards
     function _calculatePendingRewards(address user, address token) internal view returns (uint256) {
-        Checkpoint memory checkpoint = userCheckpoints[user][token];
+        RewardSnapshot memory snapshot = userSnapshots[user][token];
         RewardData storage rData = rewardData[token];
 
-        // Calculate rewards since last checkpoint
-        uint256 indexDelta = rData.index - checkpoint.rewardIndex;
+        // Calculate rewards since last snapshot
+        uint256 indexDelta = rData.index - snapshot.rewardIndex;
         // Use mulDivUp for final reward calculation to ensure no dust is left behind
-        uint256 newRewards = checkpoint.shareBalance.mulDivUp(indexDelta, REWARD_FACTOR);
-        uint256 totalRewards = newRewards + checkpoint.pendingRewards;
+        uint256 newRewards = snapshot.shareBalance.mulDivUp(indexDelta, REWARD_FACTOR);
+        uint256 totalRewards = newRewards + snapshot.pendingRewards;
 
         return totalRewards;
     }
@@ -514,7 +514,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @dev Internal implementation of reward claiming
     /// 1. Updates global index
     /// 2. Calculates entitled rewards
-    /// 3. Creates new checkpoint
+    /// 3. Creates new snapshot
     /// 4. Transfers rewards
     /// @param user User to claim for
     /// @param token Reward token to claim
@@ -527,8 +527,8 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         uint256 pendingRewards = _calculatePendingRewards(user, token);
 
         if (pendingRewards > 0) {
-            // Reset checkpoint with current index and zero pending rewards
-            _createCheckpoint(user, token, balanceOf[user], 0);
+            // Reset snapshot with current index and zero pending rewards
+            _createSnapshot(user, token, balanceOf[user], 0);
 
             ERC20(token).safeTransfer(user, pendingRewards);
             emit RewardsClaimed(user, token, pendingRewards);
@@ -611,10 +611,10 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     function getClaimableRewards(address user, address token) external view returns (uint256) {
         if (balanceOf[user] == 0) return 0;
 
-        Checkpoint memory checkpoint = userCheckpoints[user][token];
+        RewardSnapshot memory snapshot = userSnapshots[user][token];
         RewardData memory rData = rewardData[token];
 
-        return checkpoint.shareBalance.mulDivDown(rData.index - checkpoint.rewardIndex, REWARD_FACTOR);
+        return snapshot.shareBalance.mulDivDown(rData.index - snapshot.rewardIndex, REWARD_FACTOR);
     }
 
     /// @notice Get all reward token addresses

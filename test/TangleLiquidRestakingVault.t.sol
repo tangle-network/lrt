@@ -7,7 +7,6 @@ import {FixedPointMathLib} from "dependencies/solmate-6.8.0/src/utils/FixedPoint
 
 import {TangleLiquidRestakingVault} from "../src/TangleLiquidRestakingVault.sol";
 import {MultiAssetDelegation} from "../src/MultiAssetDelegation.sol";
-import {IOracle} from "../src/interfaces/IOracle.sol";
 import {MockMultiAssetDelegation} from "./mock/MockMultiAssetDelegation.sol";
 import {MockERC20} from "./mock/MockERC20.sol";
 
@@ -35,7 +34,7 @@ contract TangleLiquidRestakingVaultTest is Test {
 
     event RewardTokenAdded(address indexed token);
     event RewardsClaimed(address indexed user, address indexed token, uint256 amount);
-    event CheckpointCreated(
+    event RewardSnapshotCreated(
         address indexed user, address indexed token, uint256 index, uint256 timestamp, uint256 rewardIndex
     );
 
@@ -130,23 +129,23 @@ contract TangleLiquidRestakingVaultTest is Test {
         vm.stopPrank();
     }
 
-    /* ============ Checkpoint Tests ============ */
+    /* ============ Snapshot Tests ============ */
 
-    function test_CheckpointCreation() public {
+    function test_SnapshotCreation() public {
         vm.startPrank(alice);
         vault.addRewardToken(address(rewardToken1));
 
-        // Initial deposit creates checkpoint
+        // Initial deposit creates snapshot
         vm.expectEmit(true, true, true, true);
-        emit CheckpointCreated(alice, address(rewardToken1), 0, block.timestamp, 0);
+        emit RewardSnapshotCreated(alice, address(rewardToken1), 0, block.timestamp, 0);
         vault.deposit(INITIAL_DEPOSIT, alice);
 
-        // Verify checkpoint data
+        // Verify snapshot data
         (uint256 rewardIndex,, uint256 shareBalance, uint256 lastRewardIndex, uint256 pendingRewards) =
-            vault.userCheckpoints(alice, address(rewardToken1));
+            vault.userSnapshots(alice, address(rewardToken1));
 
         assertEq(rewardIndex, 0, "Initial reward index should be 0");
-        assertEq(shareBalance, INITIAL_DEPOSIT, "Share balance in checkpoint incorrect");
+        assertEq(shareBalance, INITIAL_DEPOSIT, "Share balance in snapshot incorrect");
         assertEq(lastRewardIndex, 0, "Initial lastRewardIndex should be 0");
         assertEq(pendingRewards, 0, "Initial pending rewards should be 0");
         vm.stopPrank();
