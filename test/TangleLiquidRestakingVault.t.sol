@@ -557,14 +557,14 @@ contract TangleLiquidRestakingVaultTest is Test {
         // Expected rewards calculations remain the same...
         uint256 expectedAlice = REWARD_AMOUNT // Period 1
             + ((INITIAL_DEPOSIT * PERIOD2_INDEX_DELTA) / 1e18) // Period 2
-            + ((INITIAL_DEPOSIT / 2 * PERIOD3_INDEX_DELTA) / 1e18) // Period 3
-            + ((INITIAL_DEPOSIT / 2 * PERIOD4_INDEX_DELTA) / 1e18); // Period 4
+            + (((INITIAL_DEPOSIT / 2) * PERIOD3_INDEX_DELTA) / 1e18) // Period 3
+            + (((INITIAL_DEPOSIT / 2) * PERIOD4_INDEX_DELTA) / 1e18); // Period 4
 
-        uint256 expectedBob = ((INITIAL_DEPOSIT * 2 * PERIOD2_INDEX_DELTA) / 1e18) // Period 2
-            + ((INITIAL_DEPOSIT * 2 * PERIOD3_INDEX_DELTA) / 1e18); // Period 3
+        uint256 expectedBob =
+            ((INITIAL_DEPOSIT * 2 * PERIOD2_INDEX_DELTA) / 1e18) + ((INITIAL_DEPOSIT * 2 * PERIOD3_INDEX_DELTA) / 1e18); // Period 2 // Period 3
 
-        uint256 expectedCharlie = ((INITIAL_DEPOSIT * PERIOD3_INDEX_DELTA) / 1e18) // Period 3
-            + ((INITIAL_DEPOSIT * PERIOD4_INDEX_DELTA) / 1e18); // Period 4
+        uint256 expectedCharlie =
+            ((INITIAL_DEPOSIT * PERIOD3_INDEX_DELTA) / 1e18) + ((INITIAL_DEPOSIT * PERIOD4_INDEX_DELTA) / 1e18); // Period 3 // Period 4
 
         assertEq(aliceRewards[0], expectedAlice, "Alice rewards incorrect");
         assertEq(bobRewards[0], expectedBob, "Bob rewards incorrect");
@@ -631,7 +631,7 @@ contract TangleLiquidRestakingVaultTest is Test {
         // Third period - Alice 50e18, Bob 150e18 (total supply = 200e18)
         uint256 period3RewardPerShare = REWARD_AMOUNT.mulDivDown(1e18, INITIAL_DEPOSIT * 2); // 0.05e18
         uint256 alicePeriod3 = (INITIAL_DEPOSIT / 2).mulDivDown(period3RewardPerShare, 1e18); // 2.5e18
-        uint256 bobPeriod3 = (INITIAL_DEPOSIT * 3 / 2).mulDivDown(period3RewardPerShare, 1e18); // 7.5e18
+        uint256 bobPeriod3 = ((INITIAL_DEPOSIT * 3) / 2).mulDivDown(period3RewardPerShare, 1e18); // 7.5e18
 
         uint256 expectedAlice = alicePeriod1 + alicePeriod2 + alicePeriod3;
         uint256 expectedBob = bobPeriod2 + bobPeriod3;

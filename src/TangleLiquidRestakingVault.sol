@@ -271,12 +271,10 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         super.deposit(assets, receiver);
 
         // Deposit into the MADs system
-        // _deposit(assets);
-        MULTI_ASSET_DELEGATION_CONTRACT.deposit(0, address(asset), assets, 0);
+        _deposit(assets);
 
-        // Delegate deposited assets through wrapper
-        MULTI_ASSET_DELEGATION_CONTRACT.delegate(operator, 0, address(asset), assets, blueprintSelection);
-        // _delegate(operator, assets, blueprintSelection);
+        _delegate(operator, assets, blueprintSelection);
+        return shares;
     }
 
     /// @notice Execute withdrawal after delay
