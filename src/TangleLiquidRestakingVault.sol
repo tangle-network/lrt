@@ -7,6 +7,7 @@ import {SafeTransferLib} from "dependencies/solmate-6.8.0/src/utils/SafeTransfer
 import {FixedPointMathLib} from "dependencies/solmate-6.8.0/src/utils/FixedPointMathLib.sol";
 import {Owned} from "dependencies/solmate-6.8.0/src/auth/Owned.sol";
 import {TangleMultiAssetDelegationWrapper} from "./TangleMultiAssetDelegationWrapper.sol";
+import {MULTI_ASSET_DELEGATION_CONTRACT} from "./MultiAssetDelegation.sol";
 
 /// @title TangleLiquidRestakingVault
 /// @notice ERC4626-compliant vault that implements reward distribution with index-based accounting
@@ -174,7 +175,9 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// - Token must not already be registered
     /// @param token Address of reward token to register
     function addRewardToken(address token) external {
-        if (token == address(0) || token == address(asset)) revert InvalidRewardToken();
+        if (token == address(0) || token == address(asset)) {
+            revert InvalidRewardToken();
+        }
         if (rewardData[token].isValid) revert RewardTokenAlreadyAdded();
 
         rewardData[token] = RewardData({
@@ -267,8 +270,11 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         // Complete deposit
         super.deposit(assets, receiver);
 
-        // Delegate deposited assets through wrapper
+        // Deposit into the MADs system
+        _deposit(assets);
+
         _delegate(operator, assets, blueprintSelection);
+        return shares;
     }
 
     /// @notice Execute withdrawal after delay

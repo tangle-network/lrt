@@ -17,3 +17,5 @@ docs/
 # Soldeer
 /dependencies
 byzantine-*
+
+.direnv/
