@@ -45,6 +45,13 @@ abstract contract TangleMultiAssetDelegationWrapper {
 
     /* ============ Internal Functions ============ */
 
+    /// @notice Get the current balance of the delegator
+    /// @param delegator The delegator to get the balance for
+    /// @return The balance of the delegator
+    function _balanceOf(address delegator) internal view returns (uint256) {
+        return mads.balanceOf(delegator, 0, address(token));
+    }
+
     /// @notice Deposit assets into the delegation system
     /// @param amount Amount of assets to deposit
     function _deposit(uint256 amount) internal {

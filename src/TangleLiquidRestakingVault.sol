@@ -633,7 +633,7 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @dev Returns total base assets, excluding reward tokens
     /// @return Total value in terms of asset tokens
     function totalAssets() public view override returns (uint256) {
-        return asset.balanceOf(address(this));
+        return _balanceOf(address(this));
     }
 
     /// @notice Get reward data for a token
