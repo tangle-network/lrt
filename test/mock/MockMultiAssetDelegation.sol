@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
+import {ERC20} from "dependencies/solmate-6.8.0/src/tokens/ERC20.sol";
 import {MultiAssetDelegation} from "../../src/MultiAssetDelegation.sol";
 
 contract MockMultiAssetDelegation is MultiAssetDelegation {
@@ -17,6 +18,12 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
     mapping(address => ScheduleState) public scheduledUnstakes;
     mapping(address => ScheduleState) public scheduledWithdraws;
     mapping(address => uint256) public delegatedAmounts;
+
+    ERC20 public immutable token;
+
+    constructor(ERC20 _token) {
+        token = _token;
+    }
 
     // Events
     event Delegated(
@@ -56,7 +63,6 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
 
     // Deposit function - just track delegated amount
     function deposit(uint256, address, uint256 amount, uint8) external {
-        delegatedAmounts[msg.sender] += amount;
         emit Delegated(address(0), msg.sender, amount, bytes32(0), new uint64[](0));
     }
 
@@ -153,5 +159,13 @@ contract MockMultiAssetDelegation is MultiAssetDelegation {
         // Return the scheduled amount for the caller (vault), not the end user
         ScheduleState storage state = scheduledWithdraws[tokenAddress];
         return (state.amount, state.timestamp);
+    }
+
+    function balanceOf(address who, uint256, address) external view returns (uint256) {
+        return token.balanceOf(who);
+    }
+
+    function delegatedBalanceOf(address who, uint256, address) external view returns (uint256) {
+        return delegatedAmounts[who];
     }
 }

@@ -43,7 +43,7 @@ contract TangleLiquidRestakingVaultTest is Test {
         baseToken = new MockERC20("Base Token", "BASE", 18);
         rewardToken1 = new MockERC20("Reward Token 1", "RWD1", 18);
         rewardToken2 = new MockERC20("Reward Token 2", "RWD2", 18);
-        mockMADS = new MockMultiAssetDelegation();
+        mockMADS = new MockMultiAssetDelegation(baseToken);
         blueprintSelection = new uint64[](1);
         blueprintSelection[0] = 1;
 
