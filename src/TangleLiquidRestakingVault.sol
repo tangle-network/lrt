@@ -7,7 +7,7 @@ import {SafeTransferLib} from "dependencies/solmate-6.8.0/src/utils/SafeTransfer
 import {FixedPointMathLib} from "dependencies/solmate-6.8.0/src/utils/FixedPointMathLib.sol";
 import {Owned} from "dependencies/solmate-6.8.0/src/auth/Owned.sol";
 import {TangleMultiAssetDelegationWrapper} from "./TangleMultiAssetDelegationWrapper.sol";
-import {MULTI_ASSET_DELEGATION_CONTRACT} from "./MultiAssetDelegation.sol";
+import {TangleRewardsWrapper} from "./TangleRewardsWrapper.sol";
 
 /// @title TangleLiquidRestakingVault
 /// @notice ERC4626-compliant vault that implements reward distribution with index-based accounting
@@ -29,7 +29,7 @@ import {MULTI_ASSET_DELEGATION_CONTRACT} from "./MultiAssetDelegation.sol";
 ///    - Deposits are automatically delegated to operator
 ///    - Curator can update blueprint selection
 ///    - Withdrawals require unstaking through Tangle runtime
-contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegationWrapper {
+contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegationWrapper, TangleRewardsWrapper {
     using SafeTransferLib for ERC20;
     using FixedPointMathLib for uint256;
 
@@ -155,11 +155,13 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
         bytes32 _operator,
         uint64[] memory _blueprintSelection,
         address _mads,
+        address _rewards,
         string memory _name,
         string memory _symbol
     )
         ERC4626(ERC20(_baseToken), _name, _symbol)
         TangleMultiAssetDelegationWrapper(_baseToken, _mads)
+        TangleRewardsWrapper(_rewards)
         Owned(msg.sender)
     {
         operator = _operator;
@@ -206,6 +208,9 @@ contract TangleLiquidRestakingVault is ERC4626, Owned, TangleMultiAssetDelegatio
     /// @return rewards Array of claimed amounts per token
     function claimRewards(address user, address[] calldata tokens) external returns (uint256[] memory rewards) {
         if (msg.sender != user) revert Unauthorized();
+
+        // assetId is zero for native asset.
+        _claimRewards(uint256(0), address(0));
 
         rewards = new uint256[](tokens.length);
 
