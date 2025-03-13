@@ -33,6 +33,11 @@ contract MockRewards is Rewards {
             revert("MockRewards: Forced failure");
         }
 
+        if (tokenAddress == address(0)) {
+            baseToken.transfer(msg.sender, rewardAmount);
+            return;
+        }
+
         ERC20(tokenAddress).transfer(msg.sender, rewardAmount);
     }
 }
