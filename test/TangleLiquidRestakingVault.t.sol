@@ -9,6 +9,7 @@ import {TangleLiquidRestakingVault} from "../src/TangleLiquidRestakingVault.sol"
 import {MultiAssetDelegation} from "../src/MultiAssetDelegation.sol";
 import {MockMultiAssetDelegation} from "./mock/MockMultiAssetDelegation.sol";
 import {MockERC20} from "./mock/MockERC20.sol";
+import {MockRewards} from "./mock/MockRewards.sol";
 
 contract TangleLiquidRestakingVaultTest is Test {
     using FixedPointMathLib for uint256;
@@ -23,6 +24,7 @@ contract TangleLiquidRestakingVaultTest is Test {
     MockERC20 public rewardToken1;
     MockERC20 public rewardToken2;
     MockMultiAssetDelegation public mockMADS;
+    MockRewards public mockRewards;
 
     bytes32 public constant OPERATOR = bytes32(uint256(1));
     uint64[] public blueprintSelection;
@@ -44,12 +46,19 @@ contract TangleLiquidRestakingVaultTest is Test {
         rewardToken1 = new MockERC20("Reward Token 1", "RWD1", 18);
         rewardToken2 = new MockERC20("Reward Token 2", "RWD2", 18);
         mockMADS = new MockMultiAssetDelegation(baseToken);
+        mockRewards = new MockRewards(baseToken);
         blueprintSelection = new uint64[](1);
         blueprintSelection[0] = 1;
 
         // Deploy vault
         vault = new TangleLiquidRestakingVault(
-            address(baseToken), OPERATOR, blueprintSelection, address(mockMADS), "Tangle Liquid Restaking Token", "tLRT"
+            address(baseToken),
+            OPERATOR,
+            blueprintSelection,
+            address(mockMADS),
+            address(mockRewards),
+            "Tangle Liquid Restaking Token",
+            "tLRT"
         );
 
         // Fund test accounts
